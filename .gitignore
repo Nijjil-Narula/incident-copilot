@@ -1,0 +1,37 @@
+# .gitignore — Incident Copilot
+# Excludes secrets, build artifacts, and local runtime data from version control.
+
+# ── Secrets ─────────────────────────────────────────────────────────────────
+.env
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# ── Docker runtime volumes (if bind-mounted locally) ────────────────────────
+volumes/
+postgres_data/
+redis_data/
+faiss_store/
+
+# ── IDE / OS ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db
+
+# ── Test artefacts ───────────────────────────────────────────────────────────
+.pytest_cache/
+htmlcov/
+.coverage

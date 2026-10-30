@@ -1,0 +1,30 @@
+# .dockerignore — Incident Copilot
+# Keeps the Docker build context small and prevents secrets from being copied
+# into any image layer.
+
+# ── Secrets (must never enter an image layer) ────────────────────────────────
+.env
+
+# ── Version control ──────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Python artefacts ─────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# ── Runtime data / volumes ────────────────────────────────────────────────────
+volumes/
+faiss_store/
+postgres_data/
+redis_data/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+
+# ── Docs / misc ───────────────────────────────────────────────────────────────
+*.md

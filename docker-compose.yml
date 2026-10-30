@@ -1,0 +1,131 @@
+# docker-compose.yml
+# Incident Copilot — orchestrates all four services: api, ui, redis, postgres.
+# Memory limits are read from .env so they can be tuned without touching this file.
+# Ports are bound to 127.0.0.1 only; postgres and redis are never published.
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: incident_copilot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env before starting}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # postgres and redis are intentionally NOT published to the host
+    deploy:
+      resources:
+        limits:
+          memory: ${POSTGRES_MEM_LIMIT:-512m}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: incident_copilot_redis
+    restart: unless-stopped
+    # maxmemory-policy: evict any key when full (good for a cache layer).
+    # appendonly: persist the cache to the redis_data volume across restarts.
+    command: >
+      redis-server
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --loglevel warning
+    volumes:
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEM_LIMIT:-256m}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: incident_copilot_api
+    restart: unless-stopped
+    # The api gets the full .env so it can read DB credentials, API keys, etc.
+    env_file:
+      - .env
+    environment:
+      HF_HOME: /app/hf_cache
+    volumes:
+      - faiss_index:/app/faiss_store
+      - hf_cache:/app/hf_cache
+    # Bind to 127.0.0.1 so the port is only reachable from the local machine
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEM_LIMIT:-2g}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Allows the api container to reach Ollama (or any service) running on the
+    # Windows/WSL host via the hostname host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      # python:3.11-slim has no curl; use Python's built-in urllib instead.
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: incident_copilot_ui
+    restart: unless-stopped
+    # The ui does NOT receive .env — it must never have access to secrets.
+    # Only the API URL is injected via the environment block below.
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "127.0.0.1:${UI_HOST_PORT:-8501}:8501"
+    deploy:
+      resources:
+        limits:
+          memory: ${UI_MEM_LIMIT:-512m}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # python:3.11-slim has no curl; use Python's built-in urllib instead.
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')\""
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres_data:
+    name: incident_copilot_postgres_data
+  redis_data:
+    name: incident_copilot_redis_data
+  faiss_index:
+    name: incident_copilot_faiss_index
+  hf_cache:
+    name: incident_copilot_hf_cache

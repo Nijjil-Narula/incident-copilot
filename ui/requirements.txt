@@ -1,0 +1,8 @@
+# ui/requirements.txt
+# Python dependencies for the Incident Copilot Streamlit frontend.
+
+# UI framework
+streamlit==1.37.*
+
+# HTTP client — used to call the FastAPI backend
+requests==2.32.*
