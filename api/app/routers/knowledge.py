@@ -18,6 +18,7 @@ from typing import List
 from fastapi import APIRouter, Depends, File, Form, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db.session import get_session
 from app.models.orm import DocTypeEnum
 from app.models.schemas import (
@@ -34,6 +35,7 @@ from app.services.knowledge import (
     list_documents,
     search_knowledge,
 )
+from app.services.ratelimit import upload_limiter
 
 router = APIRouter()
 
@@ -67,6 +69,8 @@ async def upload_document(
     - Generates embeddings locally using SentenceTransformers.
     - Synchronises PostgreSQL records and the FAISS vector index atomically.
     """
+    settings = get_settings()
+    await upload_limiter.check(settings.rate_upload_per_min, "POST /knowledge/documents")
     return await ingest_document(file=file, doc_type=doc_type, session=session)
 
 

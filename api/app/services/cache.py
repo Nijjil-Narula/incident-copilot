@@ -60,6 +60,12 @@ async def close_redis_client() -> None:
             _redis_client = None
 
 
+def record_redis_failure() -> None:
+    """Trips the 30-second Redis failure circuit breaker."""
+    global _last_failure_time
+    _last_failure_time = time.monotonic()
+
+
 def is_circuit_open() -> bool:
     """Checks whether the 30-second Redis failure circuit breaker is active."""
     return (time.monotonic() - _last_failure_time) < CIRCUIT_BREAKER_COOLDOWN_S
@@ -208,6 +214,7 @@ async def single_flight_lock(key: str) -> AsyncGenerator[None, None]:
 __all__ = [
     "get_redis_client",
     "close_redis_client",
+    "record_redis_failure",
     "is_circuit_open",
     "get_cached_answer",
     "set_cached_answer",

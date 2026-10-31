@@ -35,6 +35,7 @@ from app.services.guardrail import GuardrailResult, verify_guardrail
 from app.services.knowledge import search_knowledge
 from app.services.llm import LLMResult, get_llm_provider
 from app.services.prompts import PROMPT_VERSION, SYSTEM_PROMPT, format_user_prompt
+from app.services.ratelimit import daily_llm_limiter
 
 # LangSmith tracing integration (fails safe if langsmith is not configured or throws)
 try:
@@ -206,7 +207,8 @@ async def process_question(
         # Format user prompt with neutralized delimiters
         user_prompt = format_user_prompt(hits, question)
 
-        # Call LLM provider
+        # Call LLM provider (atomically counts real LLM call against daily budget)
+        await daily_llm_limiter.acquire_call("POST /incidents/{id}/ask")
         llm_result, llm_ms = await _call_llm(SYSTEM_PROMPT, user_prompt)
 
         # Run guardrail verification

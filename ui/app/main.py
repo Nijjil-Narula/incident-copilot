@@ -151,6 +151,26 @@ def fetch_incident(incident_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def format_429_warning(response: requests.Response) -> str:
+    """Formats user-facing warning message for HTTP 429 rate limit or daily cap errors."""
+    retry_after = response.headers.get("Retry-After", "")
+    is_daily = False
+    try:
+        resp_json = response.json()
+        if isinstance(resp_json, dict) and "detail" in resp_json:
+            if "daily" in str(resp_json["detail"]).lower():
+                is_daily = True
+    except Exception:
+        if "daily" in response.text.lower():
+            is_daily = True
+
+    if is_daily:
+        return "The daily limit was reached."
+    if retry_after:
+        return f"Too many requests right now. Try again in {retry_after} seconds."
+    return "Too many requests right now. Please try again shortly."
+
+
 def ask_incident_question(incident_id: str, question: str) -> None:
     """
     Submits a triage question to the incident copilot API and handles the response.
@@ -173,6 +193,8 @@ def ask_incident_question(incident_id: str, question: str) -> None:
             )
             if response.status_code == 200:
                 st.rerun()
+            elif response.status_code == 429:
+                st.warning(format_429_warning(response))
             else:
                 detail: Optional[str] = None
                 try:
@@ -554,6 +576,8 @@ with tab_chat:
                                     if resp.status_code == 200:
                                         st.session_state["chat_flash_message"] = "Incident resolved successfully."
                                         st.rerun()
+                                    elif resp.status_code == 429:
+                                        st.warning(format_429_warning(resp))
                                     elif resp.status_code == 404:
                                         st.error("Incident not found.")
                                     elif resp.status_code == 409:
@@ -676,6 +700,12 @@ with tab_admin:
                                 f"({data.get('chunk_count')} chunks, "
                                 f"{data.get('char_count')} chars){replaced_msg}."
                             ),
+                        }
+                        st.rerun()
+                    elif response.status_code == 429:
+                        st.session_state["admin_flash_message"] = {
+                            "type": "warning",
+                            "text": format_429_warning(response),
                         }
                         st.rerun()
                     else:

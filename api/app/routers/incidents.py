@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db.session import async_session_factory, get_session
 from app.models.orm import Chunk, DocTypeEnum, Document, Incident, Message, RoleEnum, StatusEnum
 from app.models.schemas import (
@@ -43,6 +44,7 @@ from app.services.postmortem import (
     release_resolution_lock,
     slugify_title,
 )
+from app.services.ratelimit import ask_limiter, daily_llm_limiter, resolve_limiter
 
 router = APIRouter(tags=["Incidents"])
 
@@ -234,6 +236,10 @@ async def ask_question(
     """
     received_at = datetime.now(timezone.utc)
 
+    # ── Abuse & Rate Limit: sliding-window check runs first ──────────────────
+    settings = get_settings()
+    await ask_limiter.check(settings.rate_ask_per_min, "POST /incidents/{id}/ask")
+
     # ── 1. Read check: ensure incident exists and is active ──────────────────
     async with async_session_factory() as session:
         incident = await session.get(Incident, id)
@@ -327,6 +333,14 @@ async def resolve_incident(
          sets resolved_at, updated_at, and postmortem_md, commits and refreshes.
       9. Returns full IncidentDetail with ordered messages.
     """
+    # ── Abuse & Rate Limits check BEFORE lock, DB session, or incident load ───
+    settings = get_settings()
+    await resolve_limiter.check(settings.rate_resolve_per_min, "POST /incidents/{id}/resolve")
+    if body.generate_postmortem:
+        # Pre-check capacity for up to 2 LLM calls because post-mortem generation
+        # can execute a one-time automatic retry if heading validation fails.
+        await daily_llm_limiter.check_capacity("POST /incidents/{id}/resolve", needed=2)
+
     role_order = case(
         (Message.role == RoleEnum.system, 0),
         (Message.role == RoleEnum.user, 1),

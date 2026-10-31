@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     langsmith_api_key: str = Field(default="", description="LangSmith API key. NEVER exposed via API.")
     langsmith_project: str = Field(default="incident-copilot")
 
+    # ── Abuse & Rate Limits ──────────────────────────────────────────────────
+    rate_ask_per_min: int = Field(default=30, description="Max ask triage questions per minute (global).")
+    rate_resolve_per_min: int = Field(default=5, description="Max incident resolutions per minute (global).")
+    rate_upload_per_min: int = Field(default=10, description="Max document uploads per minute (global).")
+    daily_llm_call_cap: int = Field(default=500, description="Max real LLM calls per UTC day across the app.")
+
     @property
     def database_url(self) -> str:
         """

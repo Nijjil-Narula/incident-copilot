@@ -126,6 +126,65 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     embedding_svc.shutdown()
 
 
+class RequestSizeLimitMiddleware:
+    """
+    Pure ASGI middleware enforcing a 1 MB request body limit on non-multipart requests.
+
+    Does not consume or buffer the request body stream:
+      1. Inspects HTTP POST, PUT, PATCH methods.
+      2. If Content-Type is multipart/form-data, it is exempt (file uploads keep their 10 MB limit).
+      3. If Content-Length header is missing and no Transfer-Encoding header is present, treats
+         the request as having an empty body and allows it.
+      4. If Transfer-Encoding header is present on a non-multipart request, rejects immediately with HTTP 411.
+      5. If Content-Length header > 1 MB, rejects immediately with HTTP 413 (or 400 if non-numeric).
+    """
+
+    MAX_BYTES = 1 * 1024 * 1024  # 1 MB
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["method"] in ("POST", "PUT", "PATCH"):
+            headers = dict(scope.get("headers", []))
+            content_type = headers.get(b"content-type", b"").decode("latin1").lower()
+
+            # Multipart file uploads are exempt from the 1 MB JSON limit
+            if not content_type.startswith("multipart/form-data"):
+                content_length_raw = headers.get(b"content-length")
+                transfer_encoding = headers.get(b"transfer-encoding")
+
+                if content_length_raw is None:
+                    if transfer_encoding is not None:
+                        response = JSONResponse(
+                            status_code=411,
+                            content={"detail": "Length Required: Chunked transfer encoding is not supported."},
+                        )
+                        await response(scope, receive, send)
+                        return
+                    # Content-Length missing AND no Transfer-Encoding header: treat as an empty body and allow
+                else:
+                    try:
+                        content_length = int(content_length_raw.decode("latin1"))
+                    except (ValueError, TypeError):
+                        response = JSONResponse(
+                            status_code=400,
+                            content={"detail": "Invalid Content-Length header."},
+                        )
+                        await response(scope, receive, send)
+                        return
+
+                    if content_length > self.MAX_BYTES:
+                        response = JSONResponse(
+                            status_code=413,
+                            content={"detail": "Request body too large. Maximum size is 1 MB."},
+                        )
+                        await response(scope, receive, send)
+                        return
+
+        await self.app(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     """Factory function that assembles and returns the configured FastAPI application."""
     settings = get_settings()
@@ -139,6 +198,9 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    # ── Request Body Size Limit Middleware ─────────────────────────────────
+    application.add_middleware(RequestSizeLimitMiddleware)
 
     # ── Global Exception Handler ───────────────────────────────────────────
     @application.exception_handler(Exception)

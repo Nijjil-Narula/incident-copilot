@@ -114,7 +114,10 @@ To eliminate hallucinations during incident response, the copilot executes a who
 - answers cached globally and prompts carry no chat history;
 - the guardrail verifies a command exists in a runbook but not that it suits the situation;
 - LangSmith and Gemini receive question and chunk text so tracing is off by default;
-- preview Gemini models can return 503s, the model is one env line (GEMINI_MODEL) to swap.
+- preview Gemini models can return 503s, the model is one env line (GEMINI_MODEL) to swap;
+- rate limits are global, not per user;
+- the daily LLM cap is stored in Redis on a best-effort basis (eviction or Redis loss resets it) and per-minute windows reset on API restart;
+- a post-mortem can use up to 2 LLM calls (one retry if headings are missing), so the 500 daily cap is about 250 resolves in the worst case.
 
 ---
 

@@ -30,6 +30,7 @@ from app.models.schemas import SearchHit
 from app.services.cache import get_kb_version
 from app.services.guardrail import extract_runbook_commands, verify_guardrail
 from app.services.llm import LLMProvider, LLMResult, LLMUnavailableError, get_llm_provider
+from app.services.ratelimit import daily_llm_limiter
 
 # LangSmith tracing integration (fails safe if langsmith is not configured or throws)
 try:
@@ -348,6 +349,7 @@ async def _call_llm_with_trace(
     timeout_s: float,
 ) -> LLMResult:
     """Invokes the LLM provider with explicit max tokens and timeout."""
+    await daily_llm_limiter.acquire_call("POST /incidents/{id}/resolve")
     return await provider.generate(
         system=system,
         user=user,
