@@ -1,0 +1,62 @@
+# docker-compose.prod.yml
+# Production override file for Incident Copilot on Oracle Cloud ARM64 (Ubuntu 24.04).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+services:
+
+  # Caddy reverse proxy: Caddy is the ONLY service allowed to publish host ports (80 and 443).
+  # All backend services (api, ui, postgres, redis) run in the private Docker network.
+  caddy:
+    image: caddy:2.8.4-alpine
+    container_name: incident_copilot_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?Set BASIC_AUTH_USER in .env}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?Set BASIC_AUTH_HASH in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      ui:
+        condition: service_healthy
+    logging: &default-logging
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # api container: strip host port publication.
+  # NOTE: 'ports: !reset []' requires Docker Compose v2.24 or newer to reset the list
+  # and prevent publishing host ports in production.
+  api:
+    ports: !reset []
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ui container: strip host port publication (traffic must enter via Caddy on 443).
+  # NOTE: 'ports: !reset []' requires Docker Compose v2.24 or newer to reset the list
+  # and prevent publishing host ports in production.
+  ui:
+    ports: !reset []
+    restart: unless-stopped
+    logging: *default-logging
+
+  postgres:
+    restart: unless-stopped
+    logging: *default-logging
+
+  redis:
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  caddy_data:
+    name: incident_copilot_caddy_data
+  caddy_config:
+    name: incident_copilot_caddy_config

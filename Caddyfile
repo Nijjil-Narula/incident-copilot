@@ -1,0 +1,39 @@
+# Caddyfile — Incident Copilot Production Reverse Proxy
+#
+# NOTE: With DOMAIN=localhost, Caddy automatically uses its internal certificate authority,
+# allowing full HTTPS and Basic Auth testing on a local development laptop before cloud deployment.
+# For public domains (e.g. copilot.example.com or your-subdomain.duckdns.org), Caddy automatically
+# provisions and renews Let's Encrypt / ZeroSSL TLS certificates via ACME on ports 80/443.
+
+{$DOMAIN} {
+	# HTTP Basic Authentication protecting the entire application
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	# Hardened HTTP Response Headers
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Structured JSON Access Logging
+	# Redacts the Authorization header to prevent logging credentials.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>headers>Authorization replace "[REDACTED]"
+			}
+		}
+	}
+
+	# Reverse proxy to Streamlit UI container.
+	# NOTE: Streamlit requires active WebSocket connections for reactive triage chat and UI state.
+	# Caddy reverse_proxy supports HTTP/1.1 WebSocket upgrades transparently by default.
+	reverse_proxy ui:8501
+}
